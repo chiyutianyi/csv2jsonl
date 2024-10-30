@@ -27,6 +27,7 @@ import (
 
 func getRowReader(lines chan interface{}, requiredCols []string) func(columns, row []string) {
 	if len(requiredCols) == 1 {
+		log.Infof("transfer column %s to json", requiredCols[0])
 		return func(columns, row []string) {
 			for i, colCell := range row {
 				if requiredCols[0] != columns[i] {

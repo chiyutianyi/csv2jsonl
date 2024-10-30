@@ -72,7 +72,7 @@ func main() {
 	if *o == "" {
 		enc = json.NewEncoder(os.Stdout)
 	} else {
-		f, err := os.OpenFile(*o, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		f, err := os.OpenFile(*o, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			log.Fatalf("open file failed: %v", err)
 		}
