@@ -13,28 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package main
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"flag"
-	"io"
 	"os"
 	"strings"
 
-	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 )
 
 var CSVHeader = string([]byte{0xef, 0xbb, 0xbf})
 
 func main() {
-	var (
-		enc     *json.Encoder
-		records int32
-	)
+	var enc *json.Encoder
 	i := flag.String("i", "", "input csv file")
 	o := flag.String("o", "", "output jsonl file")
 
@@ -93,69 +86,6 @@ func main() {
 	}
 
 	for line := range lines {
-		records++
 		enc.Encode(line)
 	}
-
-	log.Infof("done, total %d records", records)
-}
-
-func readCsv(f *os.File, requiredCols []string, limit int) (chan interface{}, error) {
-	csvReader := csv.NewReader(f)
-	csvReader.LazyQuotes = true
-
-	// 读取首行列名
-	columns, err := csvReader.Read()
-	if err != nil {
-		return nil, err
-	}
-	if len(columns) > 5 && columns[0][0:3] == CSVHeader {
-		columns[0] = columns[0][4 : len(columns[0])-1] // 去除列名前缀
-	}
-
-	lines := make(chan interface{})
-
-	go func() {
-		var rows int
-		for {
-			// 读取CSV文件的下一行数据
-			row, err := csvReader.Read()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				log.Fatalf("read csv failed: %v", err)
-			}
-
-			if len(row) == 0 {
-				break
-			}
-
-			rows++ // 增加行计数
-			if limit > 0 && rows > limit {
-				// 如果限制大于0且行数达到限制，跳出循环
-				break
-			}
-
-			if len(requiredCols) == 1 {
-				if lo.Contains(requiredCols, columns[0]) {
-					lines <- row[0]
-				}
-				continue
-			}
-
-			data := map[string]string{}
-			for i, colCell := range row {
-				if len(requiredCols) > 0 &&
-					!lo.Contains(requiredCols, columns[i]) {
-					continue
-				}
-				data[columns[i]] = colCell
-			}
-		}
-
-		close(lines)
-	}()
-
-	return lines, nil
 }
