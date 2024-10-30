@@ -1,0 +1,8 @@
+# output
+csv2jsonl
+
+# os files
+.DS_Store
+
+# ide
+.vscode
