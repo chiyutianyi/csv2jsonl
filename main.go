@@ -51,7 +51,10 @@ func main() {
 	}
 	log.SetLevel(level)
 
-	cols := strings.Split(*columns, ",")
+	var cols []string
+	if *columns != "" {
+		cols = strings.Split(*columns, ",")
+	}
 
 	f, err := os.OpenFile(*i, os.O_RDONLY, 0o644) // 打开文件，只读模式，权限为0o644
 	if err != nil {

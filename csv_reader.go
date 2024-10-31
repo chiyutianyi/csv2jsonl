@@ -20,13 +20,24 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 )
 
 func getRowReader(lines chan interface{}, requiredCols []string) func(columns, row []string) {
-	if len(requiredCols) == 1 {
+	switch len(requiredCols) {
+	case 0:
+		log.Infof("transfer all columns to json")
+		return func(columns, row []string) {
+			data := map[string]string{}
+			for i, colCell := range row {
+				data[columns[i]] = colCell
+			}
+			lines <- data
+		}
+	case 1:
 		log.Infof("transfer column %s to json", requiredCols[0])
 		return func(columns, row []string) {
 			for i, colCell := range row {
@@ -40,15 +51,18 @@ func getRowReader(lines chan interface{}, requiredCols []string) func(columns, r
 				lines <- data
 			}
 		}
-	}
-	return func(columns, row []string) {
-		data := map[string]string{}
-		for i, colCell := range row {
-			if len(requiredCols) > 0 &&
-				!lo.Contains(requiredCols, columns[i]) {
-				continue
+	default:
+		log.Infof("transfer columns %v to json", strings.Join(requiredCols, ","))
+		return func(columns, row []string) {
+			data := map[string]string{}
+			for i, colCell := range row {
+				if len(requiredCols) > 0 &&
+					!lo.Contains(requiredCols, columns[i]) {
+					continue
+				}
+				data[columns[i]] = colCell
+				lines <- data
 			}
-			data[columns[i]] = colCell
 		}
 	}
 }
