@@ -11,5 +11,10 @@ go get github.com/chiyutianyi/csv2jsonl
 
 # Usage
 ```bash
-csv2jsonl -i <input_file> -o <output_file>
+csv2jsonl -i <input_file> [-o <output_file>] [-limit <count>] [-pretty]
 ```
+
+- if `o` is not specified, the output will be printed to stdout.
+- if `limit` is specified, only the first `limit` rows will be converted.
+- if `pretty` is specified, the output will be pretty printed.
+ 
