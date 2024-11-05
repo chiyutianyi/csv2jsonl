@@ -26,14 +26,35 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func getRowReader(lines chan interface{}, requiredCols []string) func(columns, row []string) {
+var (
+	jsonPrinter = func(colCell string) interface{} {
+		if strings.HasPrefix(colCell, "{") && strings.HasSuffix(colCell, "}") {
+			var data interface{}
+			if err := json.Unmarshal([]byte(colCell), &data); err != nil {
+				log.Fatalf("json unmarshal failed: %v", err)
+			}
+			return data
+		}
+		return colCell
+	}
+	rawPrinter = func(colCell string) interface{} {
+		return colCell
+	}
+)
+
+func getRowReader(lines chan interface{}, requiredCols []string, pretty bool) func(columns, row []string) {
+	dataPrinter := rawPrinter
+	if pretty {
+		dataPrinter = jsonPrinter
+	}
+
 	switch len(requiredCols) {
 	case 0:
 		log.Infof("transfer all columns to json")
 		return func(columns, row []string) {
-			data := map[string]string{}
+			data := map[string]interface{}{}
 			for i, colCell := range row {
-				data[columns[i]] = colCell
+				data[columns[i]] = dataPrinter(colCell)
 			}
 			lines <- data
 		}
@@ -44,30 +65,26 @@ func getRowReader(lines chan interface{}, requiredCols []string) func(columns, r
 				if requiredCols[0] != columns[i] {
 					continue
 				}
-				var data interface{}
-				if err := json.Unmarshal([]byte(colCell), &data); err != nil {
-					log.Fatalf("json unmarshal failed: %v", err)
-				}
-				lines <- data
+				lines <- jsonPrinter(colCell)
 			}
 		}
 	default:
 		log.Infof("transfer columns %v to json", strings.Join(requiredCols, ","))
 		return func(columns, row []string) {
-			data := map[string]string{}
+			data := map[string]interface{}{}
 			for i, colCell := range row {
 				if len(requiredCols) > 0 &&
 					!lo.Contains(requiredCols, columns[i]) {
 					continue
 				}
-				data[columns[i]] = colCell
+				data[columns[i]] = dataPrinter(colCell)
 				lines <- data
 			}
 		}
 	}
 }
 
-func readCsv(f *os.File, requiredCols []string, limit int) (chan interface{}, error) {
+func readCsv(f *os.File, requiredCols []string, limit int, pretty bool) (chan interface{}, error) {
 	csvReader := csv.NewReader(f)
 	csvReader.LazyQuotes = true
 
@@ -86,7 +103,7 @@ func readCsv(f *os.File, requiredCols []string, limit int) (chan interface{}, er
 	}
 
 	lines := make(chan interface{})
-	read := getRowReader(lines, requiredCols)
+	read := getRowReader(lines, requiredCols, pretty)
 
 	go func() {
 		var rows int

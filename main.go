@@ -67,7 +67,7 @@ func main() {
 		}
 	}()
 
-	lines, err := readCsv(f, cols, *limit)
+	lines, err := readCsv(f, cols, *limit, *pretty)
 	if err != nil {
 		log.Fatalf("read csv failed: %v", err)
 	}
