@@ -22,16 +22,19 @@ import (
 	"os"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
 	jsonPrinter = func(colCell string) interface{} {
-		if strings.HasPrefix(colCell, "{") && strings.HasSuffix(colCell, "}") {
+		trimmed := strings.TrimSpace(colCell)
+		if len(trimmed) > 1 && ((strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
+			(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]"))) {
 			var data interface{}
-			if err := json.Unmarshal([]byte(colCell), &data); err != nil {
-				log.Fatalf("json unmarshal failed: %v", err)
+			if err := json.Unmarshal([]byte(trimmed), &data); err != nil {
+				return colCell
 			}
 			return data
 		}
@@ -42,7 +45,7 @@ var (
 	}
 )
 
-func getRowReader(lines chan interface{}, requiredCols []string, pretty bool) func(columns, row []string) {
+func processRow(columns, row []string, requiredCols []string, pretty bool) interface{} {
 	dataPrinter := rawPrinter
 	if pretty {
 		dataPrinter = jsonPrinter
@@ -50,37 +53,28 @@ func getRowReader(lines chan interface{}, requiredCols []string, pretty bool) fu
 
 	switch len(requiredCols) {
 	case 0:
-		log.Infof("transfer all columns to json")
-		return func(columns, row []string) {
-			data := map[string]interface{}{}
-			for i, colCell := range row {
+		data := map[string]interface{}{}
+		for i, colCell := range row {
+			if i < len(columns) {
 				data[columns[i]] = dataPrinter(colCell)
 			}
-			lines <- data
 		}
+		return data
 	case 1:
-		log.Infof("transfer column %s to json", requiredCols[0])
-		return func(columns, row []string) {
-			for i, colCell := range row {
-				if requiredCols[0] != columns[i] {
-					continue
-				}
-				lines <- jsonPrinter(colCell)
+		for i, colCell := range row {
+			if i < len(columns) && requiredCols[0] == columns[i] {
+				return jsonPrinter(colCell)
 			}
 		}
+		return nil
 	default:
-		log.Infof("transfer columns %v to json", strings.Join(requiredCols, ","))
-		return func(columns, row []string) {
-			data := map[string]interface{}{}
-			for i, colCell := range row {
-				if len(requiredCols) > 0 &&
-					!lo.Contains(requiredCols, columns[i]) {
-					continue
-				}
+		data := map[string]interface{}{}
+		for i, colCell := range row {
+			if i < len(columns) && lo.Contains(requiredCols, columns[i]) {
 				data[columns[i]] = dataPrinter(colCell)
-				lines <- data
 			}
 		}
+		return data
 	}
 }
 
@@ -88,22 +82,28 @@ func readCsv(f *os.File, requiredCols []string, limit int, pretty bool) (chan in
 	csvReader := csv.NewReader(f)
 	csvReader.LazyQuotes = true
 
-	// 读取首行列名
 	columns, err := csvReader.Read()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to read CSV header")
 	}
 
 	if len(columns) == 0 {
-		return nil, nil
+		return nil, errors.New("CSV file has no columns")
 	}
 
-	if columns[0][0:3] == CSVHeader {
-		columns[0] = columns[0][4 : len(columns[0])-1] // 去除列名前缀
+	if len(columns[0]) >= 3 && columns[0][:3] == CSVHeader {
+		columns[0] = columns[0][3:]
 	}
 
-	lines := make(chan interface{})
-	read := getRowReader(lines, requiredCols, pretty)
+	if len(requiredCols) == 1 {
+		log.Infof("transfer column %s to json", requiredCols[0])
+	} else if len(requiredCols) > 1 {
+		log.Infof("transfer columns %v to json", strings.Join(requiredCols, ","))
+	} else {
+		log.Infof("transfer all columns to json")
+	}
+
+	lines := make(chan interface{}, 100)
 
 	go func() {
 		var rows int
@@ -113,26 +113,28 @@ func readCsv(f *os.File, requiredCols []string, limit int, pretty bool) (chan in
 		}()
 
 		for {
-			// 读取CSV文件的下一行数据
 			row, err := csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
 					break
 				}
-				log.Fatalf("read csv failed: %v", err)
+				log.Errorf("read csv failed: %v", err)
+				break
 			}
 
 			if len(row) == 0 {
-				break
+				continue
 			}
 
-			rows++ // 增加行计数
+			rows++
 			if limit > 0 && rows > limit {
-				// 如果限制大于0且行数达到限制，跳出循环
 				break
 			}
 
-			read(columns, row)
+			result := processRow(columns, row, requiredCols, pretty)
+			if result != nil {
+				lines <- result
+			}
 		}
 	}()
 

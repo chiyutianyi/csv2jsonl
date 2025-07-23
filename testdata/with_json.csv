@@ -1,0 +1,4 @@
+name,data,type
+Alice,"{""key"": ""value""}",user
+Bob,plain_text,user
+Charlie,"[1, 2, 3]",admin
